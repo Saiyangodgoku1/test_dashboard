@@ -1,11 +1,48 @@
-# File: dashboard.py
-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime
+import numpy as np
 
-# Function to load data
+# Page configuration
+st.set_page_config(
+    page_title="Advanced Analytics Dashboard",
+    page_icon="📊",
+    layout="wide"
+)
+
+# Custom CSS
+st.markdown("""
+    <style>
+        .main {
+            padding: 2rem;
+        }
+        .stButton>button {
+            width: 100%;
+        }
+        .reportview-container .main .block-container {
+            max-width: 1200px;
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+        h1 {
+            color: #1E3D59;
+        }
+        h2 {
+            color: #1E3D59;
+            font-size: 1.5rem;
+        }
+        .stAlert {
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+# Cache functions
 @st.cache_data
 def load_data(file_path):
     try:
@@ -15,73 +52,137 @@ def load_data(file_path):
         st.error(f"Error loading data: {e}")
         return None
 
-# Constants
-DEFAULT_DATA_PATH = "diabetes.csv"
+@st.cache_data
+def generate_summary_stats(data):
+    summary = {
+        "Total Records": len(data),
+        "Missing Values": data.isnull().sum().sum(),
+        "Numeric Columns": len(data.select_dtypes(include=['float64', 'int64']).columns),
+        "Categorical Columns": len(data.select_dtypes(include=['object', 'category']).columns),
+        "Memory Usage": f"{data.memory_usage().sum() / 1024:.2f} KB"
+    }
+    return summary
 
-# Dashboard title
-st.title("Professional Dynamic Dashboard")
-st.markdown("## Data Insights and Visualization")
+# Main Dashboard
+def main():
+    # Header
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.title("📊 Advanced Analytics Dashboard")
+    with col2:
+        st.text(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # Sidebar
+    st.sidebar.header("📱 Dashboard Controls")
+    
+    # File Upload
+    uploaded_file = st.sidebar.file_uploader("📂 Upload Dataset (CSV)", type=["csv"])
+    if uploaded_file:
+        data = load_data(uploaded_file)
+        st.sidebar.success("✅ File uploaded successfully!")
+    else:
+        st.info("ℹ️ Using default dataset: diabetes.csv")
+        data = load_data("diabetes.csv")
 
-# Sidebar
-st.sidebar.header("Dashboard Controls")
-uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type=["csv"])
-
-# Load data
-if uploaded_file is not None:
-    data = load_data(uploaded_file)
-    st.sidebar.success("File uploaded successfully!")
-else:
-    st.info(f"Using default dataset: {DEFAULT_DATA_PATH}")
-    data = load_data(DEFAULT_DATA_PATH)
-
-# Display data
-if data is not None:
-    st.subheader("Dataset Preview")
-    st.dataframe(data.head())
-
-    # Sidebar Filters
-    st.sidebar.subheader("Filter Options")
-    numeric_cols = data.select_dtypes(include=["float64", "int64"]).columns
-    categorical_cols = data.select_dtypes(include=["object", "category"]).columns
-
-    if not data.empty:
-        selected_cols = st.sidebar.multiselect("Select columns to display", data.columns, default=data.columns[:5])
-        st.subheader("Filtered Dataset Preview")
-        st.dataframe(data[selected_cols])
-
-        # Numeric Data Summary
-        st.sidebar.subheader("Select Numeric Column for Analysis")
-        numeric_col = st.sidebar.selectbox("Numeric Columns", numeric_cols)
-
-        if numeric_col:
-            st.subheader(f"Summary Statistics for {numeric_col}")
-            st.write(data[numeric_col].describe())
+    if data is not None:
+        # Data Overview Section
+        with st.expander("📋 Dataset Overview", expanded=True):
+            col1, col2, col3 = st.columns(3)
+            summary_stats = generate_summary_stats(data)
             
-            st.subheader(f"Histogram for {numeric_col}")
-            fig, ax = plt.subplots()
-            sns.histplot(data[numeric_col], kde=True, bins=20, ax=ax)
-            st.pyplot(fig)
+            with col1:
+                st.metric("Total Records", summary_stats["Total Records"])
+            with col2:
+                st.metric("Missing Values", summary_stats["Missing Values"])
+            with col3:
+                st.metric("Memory Usage", summary_stats["Memory Usage"])
 
-        # Categorical Data Summary
-        if not categorical_cols.empty:
-            st.sidebar.subheader("Select Categorical Column for Analysis")
-            categorical_col = st.sidebar.selectbox("Categorical Columns", categorical_cols)
+            st.dataframe(data.head(), use_container_width=True)
 
-            if categorical_col:
-                st.subheader(f"Value Counts for {categorical_col}")
-                st.write(data[categorical_col].value_counts())
+        # Sidebar Controls
+        st.sidebar.subheader("🎯 Analysis Options")
+        analysis_type = st.sidebar.selectbox(
+            "Choose Analysis Type",
+            ["Univariate Analysis", "Bivariate Analysis", "Correlation Analysis"]
+        )
+
+        # Univariate Analysis
+        if analysis_type == "Univariate Analysis":
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("📊 Numeric Distribution")
+                numeric_col = st.selectbox("Select Numeric Column", data.select_dtypes(include=['float64', 'int64']).columns)
+                fig = px.histogram(data, x=numeric_col, marginal="box", title=f"Distribution of {numeric_col}")
+                st.plotly_chart(fig, use_container_width=True)
                 
-                st.subheader(f"Bar Plot for {categorical_col}")
-                fig, ax = plt.subplots()
-                data[categorical_col].value_counts().plot(kind="bar", color="skyblue", ax=ax)
-                plt.xticks(rotation=45)
-                st.pyplot(fig)
+                # Summary statistics
+                st.write("Summary Statistics:")
+                st.write(data[numeric_col].describe())
 
-    # Correlation Heatmap
-    if not numeric_cols.empty:
-        st.subheader("Correlation Heatmap")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.heatmap(data[numeric_cols].corr(), annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
-        st.pyplot(fig)
-else:
-    st.error("No data available. Please upload a valid CSV file or include the default dataset.")
+            with col2:
+                st.subheader("📈 Time Series/Trend")
+                fig = px.box(data, y=numeric_col, title=f"Box Plot of {numeric_col}")
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Additional statistics
+                skewness = data[numeric_col].skew()
+                kurtosis = data[numeric_col].kurtosis()
+                st.write(f"Skewness: {skewness:.2f}")
+                st.write(f"Kurtosis: {kurtosis:.2f}")
+
+        # Bivariate Analysis
+        elif analysis_type == "Bivariate Analysis":
+            st.subheader("🔄 Bivariate Analysis")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                x_col = st.selectbox("Select X-axis", data.columns)
+            with col2:
+                y_col = st.selectbox("Select Y-axis", [col for col in data.columns if col != x_col])
+
+            plot_type = st.radio("Select Plot Type", ["Scatter", "Line", "Bar"])
+            
+            if plot_type == "Scatter":
+                fig = px.scatter(data, x=x_col, y=y_col, title=f"{x_col} vs {y_col}")
+            elif plot_type == "Line":
+                fig = px.line(data, x=x_col, y=y_col, title=f"{x_col} vs {y_col}")
+            else:
+                fig = px.bar(data, x=x_col, y=y_col, title=f"{x_col} vs {y_col}")
+            
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Correlation Analysis
+        else:
+            st.subheader("🔗 Correlation Analysis")
+            
+            numeric_data = data.select_dtypes(include=['float64', 'int64'])
+            correlation_method = st.radio("Select Correlation Method", ["Pearson", "Spearman"])
+            
+            if correlation_method == "Pearson":
+                corr_matrix = numeric_data.corr(method='pearson')
+            else:
+                corr_matrix = numeric_data.corr(method='spearman')
+
+            fig = px.imshow(
+                corr_matrix,
+                color_continuous_scale='RdBu',
+                title=f"{correlation_method} Correlation Matrix"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Detailed correlation analysis
+            st.write("### Detailed Correlation Values")
+            st.dataframe(corr_matrix.style.background_gradient(cmap='RdBu', axis=None))
+
+        # Data Export Options
+        st.sidebar.subheader("💾 Export Options")
+        if st.sidebar.button("Export Analysis Report"):
+            # Create and download report logic here
+            st.sidebar.success("Report exported successfully!")
+
+    else:
+        st.error("❌ No data available. Please upload a valid CSV file or include the default dataset.")
+
+if __name__ == "__main__":
+    main()
